@@ -1,0 +1,322 @@
+from gaia_tools import query
+import matplotlib
+matplotlib.use("AGG")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from astropy.table import Table
+import pyexcel
+from astropy import units as u
+from astropy.coordinates import SkyCoord
+
+import sklearn
+from sklearn import cluster
+from astropy import units as u
+from astropy.coordinates import SkyCoord
+from matplotlib.patches import Circle
+#from matplotlib import patches
+#%pylab inline
+import pywt
+from galpy.util import bovy_plot
+
+import PyPDF2
+from PyPDF2 import PdfFileReader, PdfFileWriter
+
+# csv-pd set up for DBSCANN
+GlobClust_Log_ra_dec = pd.read_csv('~/GlobClust_ra-dec.csv')
+GlobClust_Log_r_t = GlobClust_Log_ra_dec.loc[0:0,"r_t"]
+GlobClust_Log_radec = GlobClust_Log_ra_dec.loc[0:0,"RA":"DEC"]
+GlobClust_Log_ID = GlobClust_Log_ra_dec.loc[0:0,"ID"]
+GlobClust_Log_r_c = GlobClust_Log_ra_dec.loc[0:0,"r_c"]
+GlobClust_Log_r_t = GlobClust_Log_ra_dec.loc[0:0,"r_t"]
+#GlobClust_Log_dec = GlobClust_Log_ra_dec.loc[:,"dec"]
+#GlobClust_Log_RA = GlobClust_Log_ra_dec.loc[0:7,"RA"]
+#GlobClust_Log_DEC = GlobClust_Log_ra_dec.loc[0:7,"DEC"]
+#print(GlobClust_Log_r_t)
+
+GlobClust_Log_2 = pd.read_csv('~/out_NGC 288_full_12-rt_ra_dec.csv')
+GlobClust_Log_pmra = GlobClust_Log_2.loc[:,"pmra"]
+GlobClust_Log_pmdec = GlobClust_Log_2.loc[:,"pmdec"]
+GlobClust_Log_ra = GlobClust_Log_2.loc[:,"ra"]
+GlobClust_Log_dec = GlobClust_Log_2.loc[:,"dec"]
+ 
+GlobClust_Log_g = GlobClust_Log_2.loc[:,"phot_g_mean_mag"]
+GlobClust_Log_rp = GlobClust_Log_2.loc[:,"phot_rp_mean_mag"]
+GlobClust_Log_bp = GlobClust_Log_2.loc[:,"phot_bp_mean_mag"]
+GlobClust_Log_rpbp = GlobClust_Log_bp - GlobClust_Log_rp
+GlobClust_Log_ra_out = GlobClust_Log_2.loc[:,"ra"]
+GlobClust_Log_dec_out = GlobClust_Log_2.loc[:,"dec"]
+GlobClust_Log_pmdec_out = GlobClust_Log_2.loc[:,"pmdec"]
+GlobClust_Log_pmra_out = GlobClust_Log_2.loc[:,"pmra"]
+
+#GlobClust_Log_pmra = GlobClust_Log_pmra.as_matrix()
+#GlobClust_Log_pmdec = GlobClust_Log_pmdec.as_matrix()
+#GlobClust_Log_ra = GlobClust_Log_ra.as_matrix()
+#GlobClust_Log_dec = GlobClust_Log_dec.as_matrix()
+
+GlobClust_Log_parallax_out = GlobClust_Log_2.loc[:,"parallax"]
+GlobClust_Log_parallaxerror_out = GlobClust_Log_2.loc[:,"parallax_error"]
+GlobClust_Log_parallaxe_out = GlobClust_Log_2.loc[:,"parallax":"parallax_error"]
+
+coord_ra_dec_deg=[]
+coord_ra_dec = SkyCoord(GlobClust_Log_radec.loc[:,"RA"], GlobClust_Log_radec.loc[:,"DEC"], frame='icrs')
+
+Clust_Edge = GlobClust_Log_r_c[0]
+print(Clust_Edge)
+d_pc=8900
+
+#M=m-5(log(d)-1)
+GlobClust_Log_M = GlobClust_Log_g-5*((np.log10(d_pc)) - 1)
+    
+indx = (np.sqrt((np.fabs(GlobClust_Log_ra_out-coord_ra_dec.ra.deg)**2+np.fabs(GlobClust_Log_dec_out-coord_ra_dec.dec.deg)**2))<Clust_Edge/60)
+
+# Creating a routine that appends files to the output file
+def append_pdf(input,output):
+    [output.addPage(input.getPage(page_num)) for page_num in range(input.numPages)]
+
+# Creating an object where pdf pages are appended to
+output = PdfFileWriter()
+
+
+#Optimization
+epsilon = np.arange(0.02, 0.052, 0.002)
+min_samps = np.arange(10, 52, 2)
+
+for ii in range(0,len(epsilon)):
+    for j in range(0,len(min_samps)):
+        print([ii], [j])
+        # DBSCANN - parallax before scan
+        GlobClust_Log_parallaxover_out = GlobClust_Log_parallaxerror_out/GlobClust_Log_parallax_out
+
+        #parallax_indx = (GC_parallaxover>0.20) | ((1/GC_parallax>5.)*(GC_parallaxover<0.20))
+        parallax_indx2=((1/GlobClust_Log_parallax_out<5.)*(GlobClust_Log_parallaxover_out<0.10))
+        parallax_indx2=[not i for i in parallax_indx2]
+
+        coord_ra_dec_deg=[]
+        coord_ra_dec = SkyCoord(GlobClust_Log_radec.loc[:,"RA"], GlobClust_Log_radec.loc[:,"DEC"], frame='icrs')
+        print(coord_ra_dec)
+
+        DB_Params =[]
+        DB_Params=np.transpose(DB_Params)
+
+        DF={'M': GlobClust_Log_M[parallax_indx2]/5, 'rpbp': GlobClust_Log_rpbp[parallax_indx2]/2.5, 
+            'pmra': GlobClust_Log_pmra[parallax_indx2]/20, 'pmdec': GlobClust_Log_pmdec[parallax_indx2]/20}
+
+        DB_Params = pd.DataFrame(data=DF)
+        DB_Params=DB_Params.dropna()
+
+        print(DB_Params.shape)
+
+        db=sklearn.cluster.DBSCAN(eps=epsilon[ii], min_samples=min_samps[j], metric='euclidean', metric_params=None, algorithm='auto', 
+                      leaf_size=30, p=None, n_jobs=1).fit(DB_Params) #original eps=0.1625
+
+        #print(db.labels_)
+        print((db.labels_).shape)
+
+        fig=plt.figure(figsize=(18,12))
+        plt.scatter(GlobClust_Log_rpbp/2.5, GlobClust_Log_M/5, c=GlobClust_Log_rpbp/2.5, cmap='RdBu_r')
+
+        core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+        core_samples_mask[db.core_sample_indices_] = True
+        labels = db.labels_
+
+        # Number of clusters in labels, ignoring noise if present.
+        n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+
+        print('Estimated number of Subgroups: %d' % n_clusters_)
+
+        x_param3=[]
+        y_param3=[]
+
+        x_param4=[]
+        y_param4=[]
+
+        # Black removed and is used for noise instead.
+        unique_labels = set(labels)
+        colors = [plt.cm.Spectral(each)
+              for each in np.linspace(0, 1, len(unique_labels))]
+        for k, col in zip(unique_labels, colors):
+            if k == -1:
+                # Black used for noise.
+                col = [0, 0, 0, 1]
+
+            class_member_mask = (labels == k)
+    
+            #NOISE
+            #xy = DB_Params[class_member_mask & ~core_samples_mask]
+            #plt.plot(xy.loc[:, "rpbp"], xy.loc[:, "M"], 'o', markerfacecolor=tuple(col),
+            #         markeredgecolor='k', markersize=6)
+    
+            #CLEANED DATA
+            xy = DB_Params[class_member_mask & core_samples_mask]
+    
+            plt.plot(xy.loc[:, "rpbp"], xy.loc[:, "M"], 'o', markerfacecolor=tuple(col),
+                     markeredgecolor='k', markersize=14)
+    
+            x_param3.append(xy.loc[:, "rpbp"]*2.5)
+            y_param3.append(xy.loc[:, "M"]*5)
+
+
+        plt.gca().invert_yaxis()
+        plt.title('Estimated number of Subgroups: %d, [%d] [%d]' % (n_clusters_, ii, j))
+        #cb=plt.colorbar()
+        #cb.ax.tick_params(labelsize=15)
+        plt.xlabel('bp-rp', fontsize=15)
+        plt.ylabel('M', fontsize=15)
+
+        plt.legend()
+        #plt.show()
+        fig.savefig('GC_DBSCAN_'+ GlobClust_Log_ID.loc[0] +'_CMD_15rt_'+ str(ii)  + '_' +  str(j) +'.pdf')
+        plt.close()
+
+    
+        x_out3 = pd.DataFrame(x_param3)#, index=None)#, mangle_dupe_cols=True)
+        x_out3.reset_index()
+        x_out3 = x_out3.transpose() 
+        x_out3 = x_out3.loc[:,~x_out3.columns.duplicated()]
+        #x_out3 = x_out3["rpbp"].as_matrix()
+        #x_out3
+
+        y_out3 = pd.DataFrame(y_param3)#, index=None)#, mangle_dupe_cols=True)
+        y_out3.reset_index()
+        y_out3 = y_out3.transpose() 
+        y_out3 = y_out3.loc[:,~y_out3.columns.duplicated()]
+        #y_out3 = y_out3["M"].as_matrix()
+        #print(shape(y_out3))
+
+        GC_ra = pd.DataFrame({'ra':GlobClust_Log_ra})
+        GC_dec = pd.DataFrame({'dec':GlobClust_Log_dec})
+        GC_pmra = pd.DataFrame({'pmra':GlobClust_Log_pmra})
+        GC_pmdec = pd.DataFrame({'pmdec':GlobClust_Log_pmdec})
+
+        ra_DB2 = GC_ra.reindex(x_out3.index)
+        dec_DB2 = GC_dec.reindex(y_out3.index)
+        pmra_DB2 = GC_pmra.reindex(x_out3.index)
+        pmdec_DB2 = GC_pmdec.reindex(y_out3.index)
+        
+        pmra_DB2_norm = (pmra_DB2-pmra_DB2.mean())#/(pmra_DB.max()-pmra_DB.min())
+        pmdec_DB2_norm = (pmdec_DB2-pmdec_DB2.mean())#/(pmdec_DB.mean())
+    
+    
+        fig = plt.figure(figsize=(16,12))
+        ax = plt.gca()
+        #plt.scatter(ra_DB-ra_DB.mean(), dec_DB-dec_DB.mean(), c='r', alpha=0.2, label='original from DBSCANN' )
+        plt.scatter(ra_DB2-coord_ra_dec.ra.deg, dec_DB2-coord_ra_dec.dec.deg, c=pmdec_DB2_norm, 
+                cmap='inferno', vmin=-1, vmax=1)#, label='with parallax criteria after DBSCANN')
+        circle = plt.Circle((0, 0), GlobClust_Log_r_t[0]/60, color='k', fill=False, lw=5)
+        circle2 = plt.Circle((0, 0), 4*GlobClust_Log_r_t[0]/60, color='b', fill=False, lw=5)
+        ax.add_artist(circle)
+        ax.add_artist(circle2)
+        plt.title('[%d]: eps=%f; [%d]: min samps=%f' % (ii, epsilon[ii], j, min_samps[j]))
+        #plt.plot(x, y, label='y = %.2f x + %.2f' %(A, B))
+        #('eps='+ epsilon[i] +', min samps='+ min_samps[i]) #'out_GCStars_'+ GC_IDs[i] +'_cutplot_r_c.csv'
+        cb=plt.colorbar()
+        cb.ax.tick_params(labelsize=15)
+        cb.set_label(r'$\mathrm{pmdec}$',fontsize=15)
+        plt.xlabel('ra', fontsize=15)
+        plt.ylabel('dec', fontsize=15)
+        #plt.legend()
+        #plt.show()
+        fig.savefig('GC_DBSCAN_'+ GlobClust_Log_ID.loc[0] +'_radec-pmdec_15rt_'+ str(ii)  + '_' +  str(j) +'.pdf')
+        plt.close()
+
+        fig = plt.figure(figsize=(16,12))
+        plt.scatter(pmra_DB2, pmdec_DB2, marker='.')
+        plt.title('pmdec vs pmra, [%d] [%d]' %(ii,j))
+        plt.xlabel('pmra', fontsize=15)
+        plt.ylabel('pmdec', fontsize=15)
+        fig.savefig('GC_DBSCAN_'+ GlobClust_Log_ID.loc[0] +'_pms_15rt_'+ str(ii) + '_' +  str(j) +'.pdf')
+        plt.close()
+
+
+
+        #ra_DB2-coord_ra_dec.ra.deg
+        x_out3 = pd.DataFrame(x_param3)#, index=None)#, mangle_dupe_cols=True)
+        #x_out3.reset_index()
+        x_out3 = x_out3.transpose() 
+        x_out3 = x_out3.loc[:,~x_out3.columns.duplicated()]
+        #x_out3 = x_out3["rpbp"].as_matrix()
+        x_out3
+
+        y_out3 = pd.DataFrame(y_param3)#, index=None)#, mangle_dupe_cols=True)
+        #y_out3.reset_index()
+        y_out3 = y_out3.transpose() 
+        y_out3 = y_out3.loc[:,~y_out3.columns.duplicated()]
+        #y_out3 = y_out3["M"].as_matrix()
+        #print(shape(y_out3))
+
+        ra_DB = GlobClust_Log_ra_out.reindex(x_out3.index)
+        dec_DB = GlobClust_Log_dec_out.reindex(y_out3.index)
+
+        radii=np.linspace(0, 15*GlobClust_Log_r_t[0]/60, 200)
+
+        c_a = []
+
+        for i in range(1,len(radii)):
+            indx_r = (np.sqrt((np.fabs(ra_DB-coord_ra_dec.ra.deg)**2)+\
+                          np.fabs(dec_DB-coord_ra_dec.dec.deg)**2)<radii[i])*\
+            (np.sqrt((np.fabs(ra_DB-coord_ra_dec.ra.deg)**2+\
+                          np.fabs(dec_DB-coord_ra_dec.dec.deg)**2))>radii[i-1])
+    
+            ra_count = len(ra_DB[indx_r])
+            dec_count = len(dec_DB[indx_r])
+    
+            r_area_outer = np.pi*radii[i]**2
+            r_area_inner = np.pi*radii[i-1]**2
+            r_area_ring = r_area_outer-r_area_inner
+    
+            count_area = ra_count#/r_area_ring
+            count_area2 = dec_count#/r_area_ring
+            #print('debug',count_area)
+            c_a = np.append(c_a, count_area)
+        #c_a=np.array(c_a)
+        #radii=np.array(radii)
+        
+        c_a = pd.DataFrame(c_a)
+        radii = pd.DataFrame(radii[1:])
+        
+        #fig=plt.figure(figsize(16,12))
+        #plt.scatter(radii[1:]*60,c_a)
+        #ax = plt.gca()
+        #circle = plt.Circle((0, 0), 0.1, color='k', fill=False, lw=2)
+        #ax.add_artist(circle)
+        #plt.show()
+
+        fig=plt.figure(figsize=(16,12))
+        plt.scatter(np.log10(radii*60),np.log10(c_a))
+        #ry:
+        #    plt.scatter(np.log10(radii.loc*60),np.log10(c_a.dropna()))
+        #    plt.scatter(np.log10(radii*60),np.log10(c_a[~np.isnan(c_a)]))
+        #except:
+        #    print(c_a.dropna(),'cdropna')
+        #    print(radii,'rad')
+        #    print(len(radii),'lendar')
+        #    print(np.isfinite(c_a),'npifca')
+        #    print(c_a,'ca')
+        #    print(len(c_a),'lenca')
+        #    print(np.log10(radii*60))
+        #    print(np.log10(c_a[np.isfinite(c_a)]))
+        #plt.scatter(np.log10(radii[1:]*60),np.log10(c_a[~np.isnan(c_a)]))
+        ax = plt.gca()
+        fig.savefig('GC_DBSCAN_'+ GlobClust_Log_ID.loc[0] +'_density_15rt_'+ str(ii) + '_' + str(j) +'.pdf')
+        plt.close()
+        #circle = plt.Circle((0, 0), 0.1, color='k', fill=False, lw=2)
+        #ax.add_artist(circle)
+        #plt.show()
+        
+        #str_name='GC_DBSCAN_'+ GlobClust_Log_ID.loc[0] +'_CMD_12rt_'+ str(ii) + str(j) + '.pdf'
+
+        # Appending PDFs of GC's of Interest
+#        append_pdf(PdfFileReader(open(str_name, "rb")), output)
+        #append_pdf(PdfFileReader(open("GC_DBSCAN_"+ GlobClust_Log_ID.loc[0] +"_CMD_12rt_"+ str(ii) + str(j) +".pdf","rb")),output)
+        #'GC_DBSCAN_'+ GlobClust_Log_ID.loc[0] +'_CMD_12rt_'+ str(ii) + str(j) +
+        #append_pdf(PdfFileReader(open("GC_DBSCAN_"+ GlobClust_Log_ID.loc[0] +"_CMD_12rt_"+ str(ii) + str(j) + ".pdf","rb")),output)
+        #append_pdf(PdfFileReader(open("GC_DBSCAN_"+ GlobClust_Log_ID.loc[0] +"_radec-pmdec_12rt_"+ str(ii) + str(j) +".pdf","rb")),output)
+        #append_pdf(PdfFileReader(open("GC_DBSCAN_"+ GlobClust_Log_ID.loc[0] +"_pms_12rt_"+ str(ii) + str(j) +".pdf","rb")),output)
+        #append_pdf(PdfFileReader(open("GC_DBSCAN_"+ GlobClust_Log_ID.loc[0] +"_density_12rt_"+ str(ii) + str(j) +".pdf","rb")),output)
+
+
+        # Writing all the collected pages to a file
+        #output.write(open("GC_NGC288_DBSCANs.pdf","wb"))
+    
+

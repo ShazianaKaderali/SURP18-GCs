@@ -1,0 +1,60 @@
+from gaia_tools import query
+import matplotlib
+matplotlib.use("AGG")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from astropy.table import Table
+import pyexcel
+from astropy import units as u
+from astropy.coordinates import SkyCoord
+import PyPDF2
+from PyPDF2 import PdfFileReader, PdfFileWriter
+
+GlobClust_Log_ra_dec = pd.read_csv('~/GlobClust_cat.csv')
+GlobClust_Log_ra_dec = GlobClust_Log_ra_dec.loc[:,"ID":"r_t "]
+GlobClust_Log_RA = GlobClust_Log_ra_dec.loc[:,"RA"]
+GlobClust_Log_DEC = GlobClust_Log_ra_dec.loc[:,"DEC"]
+GlobClust_Log_ID = GlobClust_Log_ra_dec.loc[:,"ID"]
+GlobClust_Log_r_t = GlobClust_Log_ra_dec.loc[:,"r_t "]
+
+coord_ra_dec = SkyCoord(GlobClust_Log_RA, GlobClust_Log_DEC, frame='icrs')
+
+# Creating a routine that appends files to the output file
+#def append_pdf(input,output):
+#    [output.addPage(input.getPage(page_num)) for page_num in range(input.numPages)]
+
+# Creating an object where pdf pages are appended to
+#output = PdfFileWriter()
+
+# query and plot iteration
+for i in range(34,35): # NGC288 = (150,151)
+    print(GlobClust_Log_ID[i])
+    print(GlobClust_Log_RA[i])
+    print(GlobClust_Log_DEC[i])
+
+    globquery="""select ra, dec, ra_error, dec_error, l, b, pmra, pmdec, pmra_error, pmdec_error, phot_g_mean_mag, phot_rp_mean_mag, phot_bp_mean_mag, parallax, parallax_error, a_g_val, visibility_periods_used, astrometric_excess_noise from gaiadr2.gaia_source where abs(ra-%f)<%f and abs(dec-(%f))<%f""" %(coord_ra_dec.ra.deg[i],GlobClust_Log_r_t[i]/60*15,coord_ra_dec.dec.deg[i],GlobClust_Log_r_t[i]/60*15)
+
+    out=query.query(globquery,local=True,timeit=True)
+
+    df_t=pd.DataFrame(np.array(out))
+    df_t.to_csv('out_'+ GlobClust_Log_ID[i] +'_full_15rt_ra_dec.csv', index=True, header=True)
+    
+#    fig=plt.figure(figsize=(16,12))
+#    plt.hexbin(x=out['ra'], y=out['dec'], cmap='plasma', bins='log')
+#    plt.xlabel('ra (deg)', fontsize=15)
+#    plt.ylabel('dec (deg)', fontsize=15)
+#    plt.title('Window (4 deg): ' +'ra (deg) vs dec (deg) of ' + GlobClust_Log_ID[i], fontsize=15)
+#    cb=plt.colorbar()
+#    cb.ax.tick_params(labelsize=15)
+    #cb.set_label(r'$\mathrm{pmra}$',fontsize=15)
+#    plt.gca().tick_params(labelsize=15)
+#    plt.show()
+#    fig.savefig('GC_'+ GlobClust_Log_ID[i] +'_full_4deg_ra_dec.pdf')
+    
+    # Appending PDFs of GC's of Interest 
+    #append_pdf(PdfFileReader(open("GC_"+ GlobClust_Log_ID[i] +"_full_12-rt_ra_dec.pdf","rb")),output)
+    
+    # Writing all the collected pages to a file
+    #output.write(open("GCs_ALL.pdf","wb"))
+
